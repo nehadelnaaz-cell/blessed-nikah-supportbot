@@ -1,3 +1,5 @@
+import logging
+
 import streamlit as st
 from google import genai
 
@@ -140,12 +142,14 @@ if prompt := st.chat_input("Ask a question about Blessed Nikah..."):
             answer = get_answer(st.session_state.messages)
             st.markdown(answer)
         except KeyError:
+            logging.exception("SupportBot configuration error: GEMINI_API_KEY may be missing.")
             answer = (
-                "SupportBot AI is not configured yet. Please try again later "
+                "SupportBot AI is not configured yet. Please check the app configuration "
                 "or contact Blessed Nikah support."
             )
             st.error(answer)
         except Exception:
+            logging.exception("Gemini API request failed. See this traceback in Streamlit logs.")
             answer = (
                 "I'm sorry, the support service is temporarily unavailable. "
                 "Please try again later or contact Blessed Nikah support."
