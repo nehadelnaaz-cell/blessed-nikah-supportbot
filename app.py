@@ -148,12 +148,20 @@ if prompt := st.chat_input("Ask a question about Blessed Nikah..."):
                 "or contact Blessed Nikah support."
             )
             st.error(answer)
-        except Exception:
+        except Exception as e:
             logging.exception("Gemini API request failed. See this traceback in Streamlit logs.")
-            answer = (
-                "I'm sorry, the support service is temporarily unavailable. "
-                "Please try again later or contact Blessed Nikah support."
-            )
+            error_text = str(e)
+            if "API_KEY_INVALID" in error_text or "API key not valid" in error_text:
+                answer = (
+                    "SupportBot AI needs a valid Gemini API key. "
+                    "The app owner should create a new key in Google AI Studio "
+                    "and replace GEMINI_API_KEY in Streamlit Secrets."
+                )
+            else:
+                answer = (
+                    "I'm sorry, the support service is temporarily unavailable. "
+                    "Please try again later or contact Blessed Nikah support."
+                )
             st.error(answer)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
