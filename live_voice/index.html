@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,sans-serif;color:#173d34;background:transparent}
+  .panel{border:1px solid #ded8c9;border-radius:14px;padding:14px;background:#fff}
+  .status{font-size:13px;color:#686b65;margin:0 0 12px}
+  .controls{display:flex;gap:9px;flex-wrap:wrap}
+  button{border:1px solid #c6a15b;border-radius:10px;padding:10px 15px;background:#123f35;color:#fff;font-weight:600;cursor:pointer}
+  button.secondary{background:#fff;color:#123f35;border-color:#d7d0c1}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .transcript{margin-top:12px;padding:10px;border-radius:10px;background:#f7f5ef;min-height:48px;white-space:pre-wrap;font-size:13px;line-height:1.45}
+  .hint{font-size:11px;color:#777;margin-top:9px;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="panel">
+  <p class="status" id="status">Ready to connect. Your microphone will be requested when you start.</p>
+  <div class="controls">
+    <button id="start">Start live conversation</button>
+    <button id="stop" class="secondary" disabled>End conversation</button>
+  </div>
+  <div class="transcript" id="transcript" aria-live="polite">Your live conversation transcript will appear here.</div>
+  <div class="hint">Speak naturally in English, Hindi, or Hinglish. Keep this panel open while talking. Audio is sent to Gemini Live to generate the reply.</div>
+</div>
+<script>
+(function(){
+  const statusEl=document.getElementById("status");
+  const transcriptEl=document.getElementById("transcript");
+  const startBtn=document.getElementById("start");
+  const stopBtn=document.getElementById("stop");
+  let args={}, ws=null, mediaStream=null, audioContext=null, processor=null, source=null, muteGain=null;
+  let ready=false, nextPlayTime=0, inputText="", outputText="", turnCounter=0, activeSources=[];
+  function post(type,value){
+    window.parent.postMessage({isStreamlitMessage:true,type:type,value:value}, "*");
+  }
+  function setStatus(s){statusEl.textContent=s;}
+  function setValue(value){post("streamlit:setComponentValue",value);}
+  function downsample(buffer,inputRate,outputRate){
+    if(inputRate===outputRate)return buffer;
+    const ratio=inputRate/outputRate, length=Math.floor(buffer.length/ratio);
+    const result=new Float32Array(length);
+    for(let i=0;i<length;i++){
+      const start=Math.floor(i*ratio), end=Math.min(Math.floor((i+1)*ratio),buffer.length);
+      let sum=0; for(let j=start;j<end;j++)sum+=buffer[j];
+      result[i]=sum/Math.max(1,end-start);
+    }
+    return result;
+  }
+  function pcmBase64(floatData){
+    const bytes=new Uint8Array(floatData.length*2), view=new DataView(bytes.buffer);
+    for(let i=0;i<floatData.length;i++){
+      const sample=Math.max(-1,Math.min(1,floatData[i]));
+      view.setInt16(i*2,sample<0?sample*32768:sample*32767,true);
+    }
+    let binary=""; const step=0x8000;
+    for(let i=0;i<bytes.length;i+=step)binary+=String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+step,bytes.length)));
+    return btoa(binary);
+  }
+  function playPcm(base64){
+    if(!audioContext)return;
+    const raw=atob(base64), count=Math.floor(raw.length/2), samples=new Float32Array(count);
+    for(let i=0;i<count;i++){
+      const value=(raw.charCodeAt(i*2)&255)|((raw.charCodeAt(i*2+1)&255)<<8);
+      const signed=value>=32768?value-65536:value;
+      samples[i]=signed/32768;
+    }
+    const buffer=audioContext.createBuffer(1,count,24000);
+    buffer.copyToChannel(samples,0);
+    const node=audioContext.createBufferSource(); node.buffer=buffer; node.connect(audioContext.destination);
+    const when=Math.max(audioContext.currentTime+0.025,nextPlayTime);
+    node.start(when); nextPlayTime=when+buffer.duration;
+    activeSources.push(node); node.onended=()=>{activeSources=activeSources.filter(x=>x!==node);};
+  }
+  function stopPlayback(){
+    activeSources.forEach(n=>{try{n.stop();}catch(e){}});
+    activeSources=[]; nextPlayTime=0;
+  }
+  function appendTranscript(input,output){
+    const lines=[];
+    if(input)lines.push("You: "+input);
+    if(output)lines.push("SupportBot: "+output);
+    if(lines.length)transcriptEl.textContent=lines.join("\n\n");
+  }
+  async function start(){
+    if(!args.token){setStatus("Secure voice token is missing. Refresh and prepare a new session.");return;}
+    startBtn.disabled=true; setStatus("Requesting microphone permission...");
+    try{
+      mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      audioContext=new (window.AudioContext||window.webkitAudioContext)();
+      await audioContext.resume();
+      const liveModel=args.model||"models/gemini-3.1-flash-live-preview";
+      const url="wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token="+encodeURIComponent(args.token);
+      ws=new WebSocket(url);
+      ws.onopen=()=>{
+        const setup={
+          setup:{
+            model:liveModel,
+            generationConfig:{
+              responseModalities:["AUDIO"],
+              speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}},
+              temperature:0.2,
+              maxOutputTokens:256
+            },
+            systemInstruction:{parts:[{text:args.system_instruction||"You are a concise customer support assistant."}]},
+            inputAudioTranscription:{},
+            outputAudioTranscription:{}
+          }
+        };
+        ws.send(JSON.stringify(setup));
+        setStatus("Connecting to live voice...");
+      };
+      ws.onmessage=(event)=>{
+        let message; try{message=JSON.parse(event.data);}catch(e){return;}
+        if(message.setupComplete){ready=true;setStatus("Connected — listening. Speak naturally.");startMicStream();return;}
+        const server=message.serverContent||{};
+        const inText=server.inputTranscription&&server.inputTranscription.text;
+        const outText=server.outputTranscription&&server.outputTranscription.text;
+        if(inText)inputText+=inText;
+        if(outText)outputText+=outText;
+        if(inText||outText)appendTranscript(inputText,outputText);
+        if(server.interrupted)stopPlayback();
+        const parts=(server.modelTurn&&server.modelTurn.parts)||[];
+        for(const part of parts){
+          const inline=part.inlineData||part.inline_data;
+          if(inline&&inline.data&&String(inline.mimeType||inline.mime_type||"").includes("audio"))playPcm(inline.data);
+        }
+        if(server.turnComplete){
+          appendTranscript(inputText,outputText);
+          setStatus("Reply complete — you can keep speaking.");
+          turnCounter++;
+          setValue({turn_id:String(Date.now())+"-"+turnCounter,input_text:inputText.trim(),output_text:outputText.trim()});
+          inputText="";outputText="";
+        }
+      };
+      ws.onerror=()=>setStatus("Live connection error. End the session and try again.");
+      ws.onclose=(event)=>{ready=false;setStatus("Connection closed ("+event.code+"). Start a new session to continue.");startBtn.disabled=false;stopBtn.disabled=true;};
+    }catch(error){
+      console.error(error);setStatus("Could not start microphone or live connection: "+(error.message||error));
+      cleanup();startBtn.disabled=false;
+    }
+  }
+  function startMicStream(){
+    if(!mediaStream||!audioContext||!ws)return;
+    source=audioContext.createMediaStreamSource(mediaStream);
+    processor=audioContext.createScriptProcessor(4096,1,1);
+    muteGain=audioContext.createGain();muteGain.gain.value=0;
+    processor.onaudioprocess=(event)=>{
+      if(!ready||!ws||ws.readyState!==WebSocket.OPEN)return;
+      const input=event.inputBuffer.getChannelData(0);
+      const samples=downsample(input,audioContext.sampleRate,16000);
+      if(samples.length){
+        ws.send(JSON.stringify({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:pcmBase64(samples)}}}));
+      }
+    };
+    source.connect(processor);processor.connect(muteGain);muteGain.connect(audioContext.destination);
+    stopBtn.disabled=false;
+  }
+  function cleanup(){
+    ready=false;
+    if(ws){try{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));ws.close();}catch(e){}ws=null;}
+    if(processor){processor.disconnect();processor.onaudioprocess=null;processor=null;}
+    if(source){source.disconnect();source=null;}
+    if(muteGain){muteGain.disconnect();muteGain=null;}
+    if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
+    if(audioContext){audioContext.close().catch(()=>{});audioContext=null;}
+    stopPlayback();stopBtn.disabled=true;startBtn.disabled=false;
+  }
+  function stop(){cleanup();setStatus("Conversation ended.");}
+  startBtn.addEventListener("click",start);
+  stopBtn.addEventListener("click",stop);
+  window.addEventListener("message",(event)=>{
+    if(event.data&&event.data.type==="streamlit:render"){
+      args=event.data.args||{};
+      post("streamlit:setFrameHeight",380);
+    }
+  });
+  post("streamlit:componentReady",{apiVersion:1});
+  post("streamlit:setFrameHeight",380);
+})();
+</script>
+</body>
+</html>
