@@ -574,12 +574,26 @@ def transcribe_audio(audio_bytes, mime_type):
         mime_type = "audio/wav"
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     response = client.models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model="gemini-3.5-transcribe",
         contents=[
-            "Transcribe the speech in this audio accurately. The speaker may use English, Hindi, or Hinglish and may switch languages. Preserve the original language and wording. Do not answer the question. Return only the transcription. If there is no intelligible speech, return an empty response.",
             types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
         ],
-        config=types.GenerateContentConfig(temperature=0),
+        config=types.GenerateContentConfig(
+            audio_transcription_config=types.AudioTranscriptionConfig(
+                custom_vocabulary=[
+                    "Blessed Nikah",
+                    "Nikah",
+                    "Wali",
+                    "matrimonial",
+                    "profile",
+                    "membership",
+                    "OTP",
+                    "photo exchange",
+                    "subscription",
+                    "refund",
+                ],
+            ),
+        ),
     )
     transcript = (response.text or "").strip()
     if not transcript:
