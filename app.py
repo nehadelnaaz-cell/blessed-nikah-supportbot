@@ -37,13 +37,13 @@ def get_live_gemini_client():
 
 
 def create_live_voice_token(system_instruction):
-    """Mint a short-lived, single-use token; never expose the permanent API key."""
+    """Mint a short-lived token with limited connection retries; never expose the permanent API key."""
     now = datetime.now(timezone.utc)
     token = get_live_gemini_client().auth_tokens.create(
         config={
-            "uses": 1,
+            "uses": 5,
             "expire_time": now + timedelta(minutes=10),
-            "new_session_expire_time": now + timedelta(minutes=1),
+            "new_session_expire_time": now + timedelta(minutes=10),
             "live_connect_constraints": {
                 "model": "models/gemini-3.1-flash-live-preview",
                 "config": {
