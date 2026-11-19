@@ -580,17 +580,14 @@ def transcribe_audio(audio_bytes, mime_type):
         ],
         config=types.GenerateContentConfig(
             audio_transcription_config=types.AudioTranscriptionConfig(
+                language_codes=["en-US", "hi-IN"],
                 custom_vocabulary=[
                     "Blessed Nikah",
+                    "Blessed Nikah matrimonial platform",
                     "Nikah",
                     "Wali",
-                    "matrimonial",
-                    "profile",
-                    "membership",
                     "OTP",
                     "photo exchange",
-                    "subscription",
-                    "refund",
                 ],
             ),
         ),
