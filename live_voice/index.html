@@ -179,7 +179,7 @@
     }
   });
   window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*");
-  post("streamlit:setFrameHeight",380);
+  window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:380},"*");
 })();
 </script>
 </body>
