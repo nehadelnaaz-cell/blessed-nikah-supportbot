@@ -565,17 +565,26 @@ the answer helpful, concise, and easy to read.
 
 
 
-def transcribe_audio(audio_bytes):
+def transcribe_audio(audio_bytes, mime_type):
     """Convert a customer's recorded voice question into editable text."""
+    if not audio_bytes:
+        raise ValueError("The recording is empty. Please record your question again.")
+    supported_types = {"audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/ogg", "audio/flac", "audio/aiff", "audio/aac"}
+    if mime_type not in supported_types:
+        mime_type = "audio/wav"
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     response = client.models.generate_content(
         model="gemini-3.5-flash-lite",
         contents=[
-            "Transcribe the customer's speech accurately. The customer may speak English, Hindi, or Hinglish and may switch languages. Preserve the language and natural wording. Return only the transcription, with no explanation or answer.",
-            types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"),
+            "Transcribe the speech in this audio accurately. The speaker may use English, Hindi, or Hinglish and may switch languages. Preserve the original language and wording. Do not answer the question. Return only the transcription. If there is no intelligible speech, return an empty response.",
+            types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
         ],
+        config=types.GenerateContentConfig(temperature=0),
     )
-    return (response.text or "").strip()
+    transcript = (response.text or "").strip()
+    if not transcript:
+        raise ValueError("No clear speech was detected. Please speak clearly, record a little longer, and try again.")
+    return transcript
 
 
 def render_speaker_button(text, message_index):
@@ -643,15 +652,15 @@ if voice_recording is not None:
     if st.button("Transcribe voice", key="transcribe_voice_question"):
         try:
             with st.spinner("Understanding your voice..."):
-                transcript = transcribe_audio(voice_recording.getvalue())
+                transcript = transcribe_audio(voice_recording.getvalue(), voice_recording.type or "audio/wav")
             if transcript:
                 st.session_state["voice_draft"] = transcript
                 st.session_state.pop("voice_draft_editor", None)
             else:
                 st.warning("I couldn't hear a clear question. Please record again or type your question.")
-        except Exception:
+        except Exception as e:
             logging.exception("Voice transcription failed.")
-            st.error("Voice transcription is temporarily unavailable. You can still type your question.")
+            st.error(f"Voice transcription failed: {e}. You can still type your question or record again.")
 
 if "voice_draft" in st.session_state:
     st.text_area("Review or edit your question", key="voice_draft_editor", value=st.session_state["voice_draft"], height=90)
