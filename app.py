@@ -51,15 +51,13 @@ def create_live_voice_token(system_instruction):
                     "input_audio_transcription": {},
                     "output_audio_transcription": {},
                     "system_instruction": {"parts": [{"text": system_instruction}]},
-                    "generation_config": {
-                        "speech_config": {
-                            "voice_config": {
-                                "prebuilt_voice_config": {"voice_name": "Aoede"}
-                            }
-                        },
-                        "temperature": 0.2,
-                        "max_output_tokens": 256,
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {"voice_name": "Aoede"}
+                        }
                     },
+                    "temperature": 0.2,
+                    "max_output_tokens": 256,
                 },
             },
         }
