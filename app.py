@@ -209,6 +209,21 @@ customer through safe steps, and ask whether each step worked. Escalate only
 when the issue requires private account access, payment verification, staff
 approval, or the suggested steps have failed.
 
+CONVERSATION MEMORY & PERSONALISATION
+- Treat the recent conversation as the active support case history.
+- Remember the customer's stated issue, device/browser details, symptoms,
+  preferences, and troubleshooting steps already attempted while they remain
+  in the current conversation.
+- Use those details to tailor the next instruction. Never ask the customer to
+  repeat information they have already provided.
+- Track which suggested steps worked, failed, or are still pending. Do not
+  repeat a failed step unless there is a clear reason.
+- If the customer changes topic, answer the new question without confusing it
+  with the earlier support issue.
+- This is only short-term conversation context. Do not claim to remember the
+  customer across separate visits or sessions, and do not request sensitive
+  personal information to create a profile.
+
 CONVERSATION METHOD
 - Ask only ONE clear diagnostic question at a time when important information
   is missing. Do not overwhelm the customer with a long checklist.
@@ -322,7 +337,7 @@ def get_answer(chat_messages):
 
     conversation = "\n".join(
         f"{'Customer' if item['role'] == 'user' else 'SupportBot AI'}: {item['content']}"
-        for item in chat_messages[-12:]
+        for item in chat_messages[-20:]
     )
 
     prompt = f"""
@@ -339,10 +354,14 @@ If the customer asks multiple questions in one message, answer each question sep
 using a short numbered list. Do not skip any part of the message.
 For comparisons, distinguish lowest total price from best approximate monthly value.
 Do not repeat the full FAQ unless needed. If the answer is unknown, say so and direct
-the customer to official support. Apply the V6 self-service resolution playbook before the V5 agent
-playbook. Try to solve the customer's issue in this conversation: diagnose the
-specific symptom, give a few relevant safe steps, ask one question at a time,
-and continue based on the customer's reply. Do NOT reflexively say "contact
+the customer to official support. Apply the V6 self-service resolution playbook and V7 conversation
+memory rules. Use the recent conversation history to maintain continuity:
+remember the issue details and troubleshooting steps already attempted,
+personalise the next step, and do not ask the customer to repeat themselves.
+The app provides the most recent 20 chat messages as short-term context only.
+Try to solve the customer's issue in this conversation: diagnose the specific
+symptom, give a few relevant safe steps, ask one question at a time, and
+continue based on the customer's reply. Do NOT reflexively say "contact
 support". Escalate only when backend account access, payment reconciliation,
 staff approval, or an unresolved issue makes it necessary. Never imply that
 you have created a ticket, verified a payment, or accessed an account. Keep
