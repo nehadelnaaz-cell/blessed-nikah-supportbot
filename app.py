@@ -42,8 +42,8 @@ def create_live_voice_token(system_instruction):
     token = get_live_gemini_client().auth_tokens.create(
         config={
             "uses": 0,
-            "expire_time": now + timedelta(minutes=10),
-            "new_session_expire_time": now + timedelta(minutes=10),
+            "expire_time": now + timedelta(minutes=30),
+            "new_session_expire_time": now + timedelta(minutes=30),
             "live_connect_constraints": {
                 "model": "models/gemini-3.1-flash-live-preview",
                 "config": {
@@ -804,6 +804,15 @@ if st.session_state.get("live_voice_token"):
         default=None,
     )
     if isinstance(live_result, dict):
+        if live_result.get("event") == "renew_token":
+            try:
+                st.session_state["live_voice_token"] = create_live_voice_token(
+                    st.session_state.get("live_voice_instruction", "")
+                )
+                st.session_state.pop("live_voice_last_turn", None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not renew the secure voice session: {e}")
         turn_id = live_result.get("turn_id")
         if turn_id and turn_id != st.session_state.get("live_voice_last_turn"):
             customer_text = (live_result.get("input_text") or "").strip()
