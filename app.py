@@ -569,32 +569,48 @@ def transcribe_audio(audio_bytes, mime_type):
     """Convert a customer's recorded voice question into editable text."""
     if not audio_bytes:
         raise ValueError("The recording is empty. Please record your question again.")
-    supported_types = {"audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/ogg", "audio/flac", "audio/aiff", "audio/aac"}
+
+    supported_types = {
+        "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg",
+        "audio/ogg", "audio/flac", "audio/aiff", "audio/aac",
+        "audio/webm", "audio/mp4",
+    }
     if mime_type not in supported_types:
         mime_type = "audio/wav"
+
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+
+    # Try the dedicated transcription model first.
     response = client.models.generate_content(
         model="gemini-3.5-transcribe",
-        contents=[
-            types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-        ],
-        config=types.GenerateContentConfig(
-            audio_transcription_config=types.AudioTranscriptionConfig(
-                language_codes=["en-US", "hi-IN"],
-                custom_vocabulary=[
-                    "Blessed Nikah",
-                    "Blessed Nikah matrimonial platform",
-                    "Nikah",
-                    "Wali",
-                    "OTP",
-                    "photo exchange",
-                ],
-            ),
-        ),
+        contents=[audio_part],
     )
     transcript = (response.text or "").strip()
+
+    # Some Gemini API requests to the dedicated transcription model currently
+    # return HTTP success but no text. Fall back to Flash-Lite with an explicit
+    # transcription instruction so customers are not blocked.
     if not transcript:
-        raise ValueError("No clear speech was detected. Please speak clearly, record a little longer, and try again.")
+        fallback_response = client.models.generate_content(
+            model="gemini-3.5-flash-lite",
+            contents=[
+                "Transcribe the spoken audio accurately. Return ONLY the words spoken, "
+                "without explanations, labels, or quotation marks. The speaker may use "
+                "English, Hindi, or Hinglish. Preserve the language actually spoken. "
+                "The company name is Blessed Nikah (pronounced Blessed Nikaah). "
+                "Other relevant terms may include Nikah, Wali, OTP, and photo exchange.",
+                audio_part,
+            ],
+            config=types.GenerateContentConfig(temperature=0),
+        )
+        transcript = (fallback_response.text or "").strip()
+
+    if not transcript:
+        raise ValueError(
+            "Gemini received the recording but returned no transcript. "
+            "Please try a new recording or type your question."
+        )
     return transcript
 
 
