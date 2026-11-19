@@ -575,7 +575,7 @@ accounts, verify payments, create tickets, or perform staff actions.
     if not received:
         fallback = client.models.generate_content(
             model="gemini-3.5-flash-lite",
-            contents=prompt,
+            contents=contents if audio_bytes else prompt,
             config=types.GenerateContentConfig(
                 temperature=0.2,
                 max_output_tokens=320,
