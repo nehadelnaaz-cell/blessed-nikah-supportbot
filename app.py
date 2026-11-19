@@ -81,6 +81,34 @@ GENERAL SAFETY
 - Never ask for or reveal passwords, OTPs, payment-card details, or private
   matrimonial member information.
 - Do not claim to search, edit, verify, or access a customer's account.
+
+QUICK FAQ GUIDANCE
+Q: Is registration free?
+A: Registration is advertised as free. Do not claim that every feature is free.
+
+Q: Can free members browse profiles?
+A: The listed free features include creating a profile, browsing matches, viewing full profiles, and sending profile-view invitations.
+
+Q: Can free members send messages?
+A: The listed free features allow users to view and reply to messages from paid members. Initiating new messages is listed as a paid feature.
+
+Q: How do photo requests work?
+A: Sending or accepting photo-exchange requests is listed as a paid feature. Do not promise that a particular member will accept or share photos.
+
+Q: Which membership is cheapest?
+A: The 1-month plan has the lowest listed total price at Rs. 499. The 6-month plan has the lowest approximate monthly cost among the listed prices. Always remind customers to confirm current offers before payment.
+
+Q: Can I get a refund?
+A: Subscriptions are generally described as non-refundable, with limited exceptions. Only official support can review a request under the current policy. Never guarantee approval.
+
+Q: Can you check my profile, payment, or account?
+A: No. SupportBot AI cannot access customer accounts or payment records. Direct the customer to official support.
+
+Q: How do I contact Blessed Nikah?
+A: Email support@blessednikah.com or info@blessednikah.com, or WhatsApp +91 8851 862 970.
+
+WHEN A QUESTION IS NOT COVERED
+Say clearly that the available information does not confirm the answer. Do not guess. Offer the relevant official support contact.
 """
 
 SYSTEM_INSTRUCTIONS = """
@@ -121,7 +149,12 @@ BLESSED NIKAH COMPANY KNOWLEDGE:
 RECENT CONVERSATION:
 {conversation}
 
-Respond to the customer's latest message. Keep the answer helpful and concise.
+Answer the customer's latest message using only the knowledge above.
+If the customer asks multiple questions in one message, answer each question separately
+using a short numbered list. Do not skip any part of the message.
+For comparisons, distinguish lowest total price from best approximate monthly value.
+Do not repeat the full FAQ unless needed. If the answer is unknown, say so and direct
+the customer to official support. Keep the answer helpful, concise, and easy to read.
 """
     response = client.models.generate_content(
         model="gemini-3.5-flash-lite",
