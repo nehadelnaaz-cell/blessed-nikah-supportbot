@@ -9,8 +9,63 @@ st.set_page_config(
     layout="centered",
 )
 
-st.title("💬 SupportBot AI")
-st.caption("Customer support assistant for Blessed Nikah")
+
+st.markdown("""
+<style>
+:root { --bn-green: #123f35; --bn-green-light: #1d5b4b; --bn-gold: #c6a15b; --bn-cream: #f7f5ef; }
+.stApp { background: linear-gradient(180deg, #f7f5ef 0%, #ffffff 36%); }
+.block-container { max-width: 860px; padding-top: 2rem; padding-bottom: 3rem; }
+.bn-hero {
+  background: linear-gradient(125deg, #103c32 0%, #1d5b4b 100%);
+  color: #fff; padding: 1.55rem 1.65rem; border-radius: 18px;
+  border: 1px solid rgba(198,161,91,.55); margin-bottom: 1.1rem;
+  box-shadow: 0 8px 24px rgba(16,60,50,.12);
+}
+.bn-kicker { color: #e3c98f; font-size: .76rem; letter-spacing: .16em; font-weight: 700; }
+.bn-hero h1 { color: #fff; margin: .35rem 0 .25rem 0; font-size: 2rem; }
+.bn-hero p { color: #edf4f0; margin: 0; font-size: .98rem; }
+.bn-pill { display:inline-block; margin-top:.9rem; padding:.28rem .7rem; border:1px solid rgba(255,255,255,.3); border-radius:99px; color:#f2dfb5; font-size:.78rem; }
+div[data-testid="stChatMessage"] { border: 1px solid #e9e5da; border-radius: 15px; padding: .55rem .75rem; background: #fff; }
+div[data-testid="stChatInput"] { border-color: #d8d1c1; }
+.stButton > button { border-radius: 11px; border: 1px solid #d9d2c3; color: #17483d; background: #fff; min-height: 2.7rem; }
+.stButton > button:hover { border-color: #b9944e; color: #123f35; }
+section[data-testid="stSidebar"] { background: #f1efe7; }
+.bn-foot { text-align:center; color:#77766f; font-size:.78rem; padding-top:1rem; }
+</style>
+<div class="bn-hero">
+  <div class="bn-kicker">BLESSED NIKAH · CUSTOMER CARE</div>
+  <h1>SupportBot AI</h1>
+  <p>Clear, respectful help for your Blessed Nikah journey.</p>
+  <span class="bn-pill">Privacy · Guidance · Support</span>
+</div>
+""", unsafe_allow_html=True)
+st.caption("Ask about registration, memberships, features, or how to contact our team.")
+
+st.markdown("#### How can I help you today?")
+
+
+
+def queue_question(question):
+    st.session_state["pending_prompt"] = question
+
+quick_cols = st.columns(2)
+quick_questions = [
+    "What features are free?",
+    "What are the membership plans?",
+    "How do photo-exchange requests work?",
+    "How can I contact Blessed Nikah?",
+]
+for index, question in enumerate(quick_questions):
+    with quick_cols[index % 2]:
+        st.button(
+            question,
+            key=f"quick_question_{index}",
+            use_container_width=True,
+            on_click=queue_question,
+            args=(question,),
+        )
+
+st.markdown("---")
 
 COMPANY_KNOWLEDGE = """
 ABOUT BLESSED NIKAH
@@ -174,7 +229,11 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask a question about Blessed Nikah..."):
+typed_prompt = st.chat_input("Type your question here...")
+queued_prompt = st.session_state.pop("pending_prompt", None)
+prompt = queued_prompt or typed_prompt
+
+if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -215,6 +274,12 @@ with st.sidebar:
         "For current prices, account-specific questions, or policy decisions, "
         "please contact official Blessed Nikah support."
     )
+    st.markdown("---")
+    st.markdown("**Official support**")
+    st.write("support@blessednikah.com")
+    st.write("WhatsApp: +91 8851 862 970")
+    st.markdown("---")
+    st.caption("A respectful support experience, built around member privacy.")
     if st.button("Clear conversation"):
         st.session_state.messages = [
             {
@@ -223,3 +288,9 @@ with st.sidebar:
             }
         ]
         st.rerun()
+
+st.markdown(
+    '<div class="bn-foot">Blessed Nikah SupportBot AI · General information only · '
+    'Your private account details are handled by the official support team.</div>',
+    unsafe_allow_html=True,
+)
