@@ -524,14 +524,19 @@ RESPONSE RULES
   the app explicitly provides those capabilities.
 """
 
-def get_answer_stream(chat_messages):
-    """Stream a concise support answer as soon as Gemini generates tokens."""
+def get_answer_stream(chat_messages, audio_bytes=None, mime_type=None):
+    """Stream a concise answer; voice mode can send audio directly in one Gemini call."""
     client = get_gemini_client()
     recent = chat_messages[-8:]
     conversation = "\n".join(
         f"{'Customer' if item['role'] == 'user' else 'SupportBot AI'}: "
         f"{str(item['content'])[:900]}"
         for item in recent
+    )
+    voice_note = (
+        "The customer's latest message is attached as audio. Listen to it, "
+        "understand the spoken question (including Hindi or Hinglish), and answer it directly."
+        if audio_bytes else ""
     )
     prompt = f"""
 {SYSTEM_INSTRUCTIONS}
@@ -542,15 +547,20 @@ BLESSED NIKAH APPROVED KNOWLEDGE:
 RECENT CONVERSATION:
 {conversation}
 
+{voice_note}
 Answer the latest customer message. Follow all safety, privacy, accuracy,
 and self-help-first rules above. Be direct and concise: normally 2-5 short
 sentences or up to 3 numbered steps. Answer every part, but do not repeat
 background information or add unnecessary greetings. Never claim to access
 accounts, verify payments, create tickets, or perform staff actions.
 """
+    contents = [prompt]
+    if audio_bytes:
+        safe_mime = (mime_type or "audio/wav").split(";")[0].strip().lower()
+        contents.append(types.Part.from_bytes(data=audio_bytes, mime_type=safe_mime))
     stream = client.models.generate_content_stream(
         model="gemini-3.5-flash-lite",
-        contents=prompt,
+        contents=contents if audio_bytes else prompt,
         config=types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=320,
@@ -716,30 +726,34 @@ voice_mode = st.radio(
     label_visibility="collapsed",
 )
 st.caption(
-    "Quick mode sends the transcript automatically. Replies stream as they are generated; "
-    "use the Listen button under a reply for browser voice playback."
+    "Quick mode sends audio directly to Gemini in one request and streams the answer. "
+    "Review mode transcribes first so you can edit the words."
 )
 voice_recording = st.audio_input("Record your question", key="customer_voice_recording")
 
 if voice_recording is not None:
-    if st.button("Transcribe and continue", type="primary", key="transcribe_voice_question"):
+    voice_button_label = "Ask with voice (fast)" if voice_mode.startswith("Quick:") else "Transcribe and review"
+    if st.button(voice_button_label, type="primary", key="transcribe_voice_question"):
         try:
-            with st.spinner("Transcribing your question..."):
-                transcript = transcribe_audio(voice_recording.getvalue(), voice_recording.type or "audio/wav")
-            if transcript:
-                if voice_mode.startswith("Quick:"):
-                    st.session_state["pending_prompt"] = transcript
-                    st.session_state.pop("voice_draft", None)
-                    st.session_state.pop("voice_draft_editor", None)
-                    st.rerun()
-                else:
+            audio_bytes = voice_recording.getvalue()
+            audio_type = voice_recording.type or "audio/wav"
+            if voice_mode.startswith("Quick:"):
+                st.session_state["pending_voice_audio"] = audio_bytes
+                st.session_state["pending_voice_mime"] = audio_type
+                st.session_state.pop("voice_draft", None)
+                st.session_state.pop("voice_draft_editor", None)
+                st.rerun()
+            else:
+                with st.spinner("Transcribing your question..."):
+                    transcript = transcribe_audio(audio_bytes, audio_type)
+                if transcript:
                     st.session_state["voice_draft"] = transcript
                     st.session_state.pop("voice_draft_editor", None)
-            else:
-                st.warning("I couldn't hear a clear question. Please record again or type your question.")
+                else:
+                    st.warning("I couldn't hear a clear question. Please record again or type your question.")
         except Exception as e:
-            logging.exception("Voice transcription failed.")
-            st.error(f"Voice transcription failed: {e}. You can still type your question or record again.")
+            logging.exception("Voice processing failed.")
+            st.error(f"Voice processing failed: {e}. You can still type your question or record again.")
 
 if "voice_draft" in st.session_state:
     st.text_area("Review or edit your question", key="voice_draft_editor", value=st.session_state["voice_draft"], height=90)
@@ -753,7 +767,9 @@ if "voice_draft" in st.session_state:
 
 typed_prompt = st.chat_input("Or type your question here...")
 queued_prompt = st.session_state.pop("pending_prompt", None)
-prompt = queued_prompt or typed_prompt
+queued_voice_audio = st.session_state.pop("pending_voice_audio", None)
+queued_voice_mime = st.session_state.pop("pending_voice_mime", None)
+prompt = queued_prompt or ("🎤 Voice question" if queued_voice_audio else typed_prompt)
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -762,7 +778,13 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
-            answer = st.write_stream(get_answer_stream(st.session_state.messages))
+            answer = st.write_stream(
+                get_answer_stream(
+                    st.session_state.messages,
+                    audio_bytes=queued_voice_audio,
+                    mime_type=queued_voice_mime,
+                )
+            )
         except KeyError:
             logging.exception("SupportBot configuration error: GEMINI_API_KEY may be missing.")
             answer = (
