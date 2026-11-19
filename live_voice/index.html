@@ -33,7 +33,7 @@
   const startBtn=document.getElementById("start");
   const stopBtn=document.getElementById("stop");
   let args={}, ws=null, mediaStream=null, audioContext=null, processor=null, source=null, muteGain=null;
-  let ready=false, nextPlayTime=0, inputText="", outputText="", turnCounter=0, activeSources=[], autoStartedToken="";
+  let ready=false, nextPlayTime=0, inputText="", outputText="", turnCounter=0, activeSources=[], autoStartedToken="", connectionTimer=null;
   function postValue(type,value){
     window.parent.postMessage({isStreamlitMessage:true,type:type,value:value}, "*");
   }
@@ -96,6 +96,9 @@
       const url="wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token="+encodeURIComponent(args.token);
       ws=new WebSocket(url);
       ws.onopen=()=>{
+        setStatus("Connected to server — waiting for Gemini setup...");
+        if(connectionTimer)clearTimeout(connectionTimer);
+        connectionTimer=setTimeout(()=>{if(!ready){setStatus("Gemini did not finish connecting in 12 seconds. Please end this attempt and retry.");cleanup();startBtn.hidden=false;}},12000);
         const setup={
           setup:{
             model:liveModel,
@@ -115,7 +118,8 @@
       };
       ws.onmessage=(event)=>{
         let message; try{message=JSON.parse(event.data);}catch(e){return;}
-        if(message.setupComplete){ready=true;setStatus("Connected — listening. Speak naturally.");startMicStream();return;}
+        if(message.error){const detail=message.error.message||message.error.status||JSON.stringify(message.error);setStatus("Gemini rejected the live session: "+detail);cleanup();startBtn.hidden=false;return;}
+         if(message.setupComplete){if(connectionTimer){clearTimeout(connectionTimer);connectionTimer=null;}ready=true;setStatus("Connected — listening. Speak naturally.");startMicStream();return;}
         const server=message.serverContent||{};
         const inText=server.inputTranscription&&server.inputTranscription.text;
         const outText=server.outputTranscription&&server.outputTranscription.text;
@@ -136,8 +140,8 @@
           inputText="";outputText="";
         }
       };
-      ws.onerror=()=>{setStatus("Live connection error. Try Start manually or end the session.");startBtn.hidden=false;};
-      ws.onclose=(event)=>{ready=false;setStatus("Connection closed ("+event.code+"). Start a new session to continue.");startBtn.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;};
+      ws.onerror=()=>{if(connectionTimer){clearTimeout(connectionTimer);connectionTimer=null;}setStatus("WebSocket connection error. Please retry; if it repeats, share this message.");startBtn.hidden=false;};
+      ws.onclose=(event)=>{if(connectionTimer){clearTimeout(connectionTimer);connectionTimer=null;}ready=false;setStatus("Live connection closed ("+event.code+"): "+(event.reason||"No reason supplied")+". Please retry.");startBtn.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;};
     }catch(error){
       console.error(error);setStatus("Could not start microphone or live connection: "+(error.message||error));
       cleanup();startBtn.hidden=false;startBtn.disabled=false;
