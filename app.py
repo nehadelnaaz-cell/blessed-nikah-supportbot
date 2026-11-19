@@ -4,6 +4,7 @@ import logging
 import streamlit as st
 import streamlit.components.v1 as components
 from google import genai
+from google.genai import types
 
 st.set_page_config(
     page_title="SupportBot AI | Blessed Nikah",
@@ -563,6 +564,20 @@ the answer helpful, concise, and easy to read.
     return response.text or "I'm sorry, I couldn't prepare an answer. Please try again."
 
 
+
+def transcribe_audio(audio_bytes):
+    """Convert a customer's recorded voice question into editable text."""
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    response = client.models.generate_content(
+        model="gemini-3.5-flash-lite",
+        contents=[
+            "Transcribe the customer's speech accurately. The customer may speak English, Hindi, or Hinglish and may switch languages. Preserve the language and natural wording. Return only the transcription, with no explanation or answer.",
+            types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"),
+        ],
+    )
+    return (response.text or "").strip()
+
+
 def render_speaker_button(text, message_index):
     """Render an optional browser-powered text-to-speech button for one reply."""
     encoded_text = base64.b64encode(text.encode("utf-8")).decode("ascii")
@@ -620,7 +635,35 @@ for message_index, message in enumerate(st.session_state.messages):
         if message["role"] == "assistant":
             render_speaker_button(message["content"], message_index)
 
-typed_prompt = st.chat_input("Type your question here...")
+st.markdown("**Or ask by voice**")
+st.caption("Tap the microphone, record your question, then transcribe and review it before sending.")
+voice_recording = st.audio_input("Record your question", key="customer_voice_recording")
+
+if voice_recording is not None:
+    if st.button("Transcribe voice", key="transcribe_voice_question"):
+        try:
+            with st.spinner("Understanding your voice..."):
+                transcript = transcribe_audio(voice_recording.getvalue())
+            if transcript:
+                st.session_state["voice_draft"] = transcript
+                st.session_state.pop("voice_draft_editor", None)
+            else:
+                st.warning("I couldn't hear a clear question. Please record again or type your question.")
+        except Exception:
+            logging.exception("Voice transcription failed.")
+            st.error("Voice transcription is temporarily unavailable. You can still type your question.")
+
+if "voice_draft" in st.session_state:
+    st.text_area("Review or edit your question", key="voice_draft_editor", value=st.session_state["voice_draft"], height=90)
+    if st.button("Send voice question", type="primary", key="send_voice_question"):
+        final_voice_prompt = st.session_state.get("voice_draft_editor", st.session_state["voice_draft"]).strip()
+        if final_voice_prompt:
+            st.session_state["pending_prompt"] = final_voice_prompt
+        st.session_state.pop("voice_draft", None)
+        st.session_state.pop("voice_draft_editor", None)
+        st.rerun()
+
+typed_prompt = st.chat_input("Or type your question here...")
 queued_prompt = st.session_state.pop("pending_prompt", None)
 prompt = queued_prompt or typed_prompt
 
