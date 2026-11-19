@@ -36,7 +36,7 @@ def get_live_gemini_client():
     )
 
 
-def create_live_voice_token():
+def create_live_voice_token(system_instruction):
     """Mint a short-lived, single-use token; never expose the permanent API key."""
     now = datetime.now(timezone.utc)
     token = get_live_gemini_client().auth_tokens.create(
@@ -50,6 +50,16 @@ def create_live_voice_token():
                     "response_modalities": ["AUDIO"],
                     "input_audio_transcription": {},
                     "output_audio_transcription": {},
+                    "system_instruction": {"parts": [{"text": system_instruction}]},
+                    "generation_config": {
+                        "speech_config": {
+                            "voice_config": {
+                                "prebuilt_voice_config": {"voice_name": "Aoede"}
+                            }
+                        },
+                        "temperature": 0.2,
+                        "max_output_tokens": 256,
+                    },
                 },
             },
         }
@@ -777,7 +787,7 @@ VOICE CONVERSATION RULES:
 - Never claim to access accounts, verify payments, or perform staff actions.
 """
         with st.spinner("Preparing a secure live voice session..."):
-            st.session_state["live_voice_token"] = create_live_voice_token()
+            st.session_state["live_voice_token"] = create_live_voice_token(live_instruction)
             st.session_state["live_voice_instruction"] = live_instruction
             st.session_state.pop("live_voice_last_turn", None)
     except Exception as e:
