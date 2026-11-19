@@ -89,7 +89,7 @@
     if(needsFreshToken){
       startBtn.disabled=true;
       setStatus("Preparing a fresh secure voice connection...");
-      setValue({event:"renew_token"});
+      setValue({event:"renew_token",request_id:String(Date.now())});
       return;
     }
     if(!args.token){setStatus("Secure voice token is missing. Refresh and prepare a new session.");return;}
