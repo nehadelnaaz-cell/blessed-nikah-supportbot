@@ -1,6 +1,8 @@
+import base64
 import logging
 
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 
 st.set_page_config(
@@ -55,7 +57,7 @@ section[data-testid="stSidebar"] { background: #f1efe7; }
   <span class="bn-pill">Privacy · Guidance · Support</span>
 </div>
 """, unsafe_allow_html=True)
-st.caption("Ask anything about Blessed Nikah — registration, memberships, profiles, matches, messaging, payments, privacy, or technical issues.")
+st.caption("Ask anything about Blessed Nikah — registration, memberships, profiles, matches, messaging, payments, privacy, or technical issues. Tap 🔊 Listen under any reply to hear it aloud.")
 
 st.markdown("#### How can I help you today?")
 
@@ -560,6 +562,50 @@ the answer helpful, concise, and easy to read.
     )
     return response.text or "I'm sorry, I couldn't prepare an answer. Please try again."
 
+
+def render_speaker_button(text, message_index):
+    """Render an optional browser-powered text-to-speech button for one reply."""
+    encoded_text = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    html = """
+    <div style="font-family:Arial,sans-serif;padding:2px 0 6px 0;">
+      <button id="listen___ID__" style="border:1px solid #c6a15b;border-radius:9px;background:#fff;color:#123f35;padding:7px 13px;cursor:pointer;font-size:13px;">
+        🔊 Listen
+      </button>
+      <span style="font-size:11px;color:#777;margin-left:8px;">Audio plays on your device</span>
+    </div>
+    <script>
+      const raw = atob("__TEXT__");
+      const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
+      const spokenText = new TextDecoder().decode(bytes);
+      const button = document.getElementById("listen___ID__");
+      let isSpeaking = false;
+      button.addEventListener("click", () => {
+        if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+          button.textContent = "Audio not supported in this browser";
+          return;
+        }
+        if (isSpeaking) {
+          window.speechSynthesis.cancel();
+          isSpeaking = false;
+          button.textContent = "🔊 Listen";
+          return;
+        }
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(spokenText);
+        utterance.lang = /[\\u0900-\\u097F]/.test(spokenText) ? "hi-IN" : "en-IN";
+        utterance.rate = 1;
+        utterance.onend = () => { isSpeaking = false; button.textContent = "🔊 Listen"; };
+        utterance.onerror = () => { isSpeaking = false; button.textContent = "🔊 Listen"; };
+        isSpeaking = true;
+        button.textContent = "■ Stop";
+        window.speechSynthesis.speak(utterance);
+      });
+    </script>
+    """
+    html = html.replace("__TEXT__", encoded_text).replace("__ID__", str(message_index))
+    components.html(html, height=48, scrolling=False)
+
+
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
@@ -568,9 +614,11 @@ if "messages" not in st.session_state:
         }
     ]
 
-for message in st.session_state.messages:
+for message_index, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message["role"] == "assistant":
+            render_speaker_button(message["content"], message_index)
 
 typed_prompt = st.chat_input("Type your question here...")
 queued_prompt = st.session_state.pop("pending_prompt", None)
