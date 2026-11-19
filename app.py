@@ -41,7 +41,7 @@ def create_live_voice_token(system_instruction):
     now = datetime.now(timezone.utc)
     token = get_live_gemini_client().auth_tokens.create(
         config={
-            "uses": 5,
+            "uses": 0,
             "expire_time": now + timedelta(minutes=10),
             "new_session_expire_time": now + timedelta(minutes=10),
             "live_connect_constraints": {
