@@ -33,7 +33,7 @@
   const startBtn=document.getElementById("start");
   const stopBtn=document.getElementById("stop");
   let args={}, ws=null, mediaStream=null, audioContext=null, processor=null, source=null, muteGain=null;
-  let ready=false, nextPlayTime=0, inputText="", outputText="", turnCounter=0, activeSources=[];
+  let ready=false, nextPlayTime=0, inputText="", outputText="", turnCounter=0, activeSources=[], autoStartedToken="";
   function postValue(type,value){
     window.parent.postMessage({isStreamlitMessage:true,type:type,value:value}, "*");
   }
@@ -136,11 +136,11 @@
           inputText="";outputText="";
         }
       };
-      ws.onerror=()=>setStatus("Live connection error. End the session and try again.");
-      ws.onclose=(event)=>{ready=false;setStatus("Connection closed ("+event.code+"). Start a new session to continue.");startBtn.disabled=false;stopBtn.disabled=true;};
+      ws.onerror=()=>{setStatus("Live connection error. Try Start manually or end the session.");startBtn.hidden=false;};
+      ws.onclose=(event)=>{ready=false;setStatus("Connection closed ("+event.code+"). Start a new session to continue.");startBtn.hidden=false;startBtn.disabled=false;stopBtn.disabled=true;};
     }catch(error){
       console.error(error);setStatus("Could not start microphone or live connection: "+(error.message||error));
-      cleanup();startBtn.disabled=false;
+      cleanup();startBtn.hidden=false;startBtn.disabled=false;
     }
   }
   function startMicStream(){
@@ -176,6 +176,11 @@
     if(event.data&&event.data.type==="streamlit:render"){
       args=event.data.args||{};
       window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:380},"*");
+      if(args.auto_start && args.token && autoStartedToken!==args.token){
+        autoStartedToken=args.token;
+        startBtn.hidden=true;
+        start();
+      }
     }
   });
   window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*");
