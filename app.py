@@ -566,53 +566,93 @@ the answer helpful, concise, and easy to read.
 
 
 def transcribe_audio(audio_bytes, mime_type):
-    """Convert a customer's recorded voice question into editable text."""
+    """Transcribe a short customer voice question using audio-capable Gemini models."""
     if not audio_bytes:
         raise ValueError("The recording is empty. Please record your question again.")
 
+    # Streamlit's recorder normally supplies WAV. Preserve the actual MIME type
+    # when supported; never relabel WebM/MP4 bytes as WAV.
     supported_types = {
         "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg",
         "audio/ogg", "audio/flac", "audio/aiff", "audio/aac",
         "audio/webm", "audio/mp4",
     }
+    mime_type = (mime_type or "audio/wav").split(";")[0].strip().lower()
     if mime_type not in supported_types:
-        mime_type = "audio/wav"
+        raise ValueError(
+            f"Unsupported recording format ({mime_type}). "
+            "Please use the microphone recorder again or type your question."
+        )
+
+    if len(audio_bytes) > 18 * 1024 * 1024:
+        raise ValueError("The recording is too large. Please record a shorter question.")
 
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
-
-    # Try the dedicated transcription model first.
-    response = client.models.generate_content(
-        model="gemini-3.5-transcribe",
-        contents=[audio_part],
+    instruction = (
+        "You are an accurate speech-to-text transcription engine. "
+        "Transcribe the attached recording exactly in the language spoken. "
+        "The speaker may use English, Hindi, or Hinglish. Do not translate, "
+        "summarize, answer the question, or add commentary. Return only the "
+        "spoken words. The company name is Blessed Nikah (also pronounced "
+        "Blessed Nikaah). Relevant terms include Nikah, Wali, OTP, and photo exchange."
     )
-    transcript = (response.text or "").strip()
 
-    # Some Gemini API requests to the dedicated transcription model currently
-    # return HTTP success but no text. Fall back to Flash-Lite with an explicit
-    # transcription instruction so customers are not blocked.
-    if not transcript:
-        fallback_response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=[
-                "Transcribe the spoken audio accurately. Return ONLY the words spoken, "
-                "without explanations, labels, or quotation marks. The speaker may use "
-                "English, Hindi, or Hinglish. Preserve the language actually spoken. "
-                "The company name is Blessed Nikah (pronounced Blessed Nikaah). "
-                "Other relevant terms may include Nikah, Wali, OTP, and photo exchange.",
-                audio_part,
-            ],
-            config=types.GenerateContentConfig(temperature=0),
-        )
-        transcript = (fallback_response.text or "").strip()
+    # Do not call gemini-3.5-transcribe here: it has been observed returning
+    # HTTP 200 with an empty candidate for valid audio. Use general audio-capable
+    # generateContent models and inspect candidate parts explicitly.
+    failures = []
+    for model_name in ("gemini-3.5-flash", "gemini-3.5-flash-lite"):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[instruction, audio_part],
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    max_output_tokens=1024,
+                ),
+            )
 
-    if not transcript:
-        raise ValueError(
-            "Gemini received the recording but returned no transcript. "
-            "Please try a new recording or type your question."
-        )
-    return transcript
+            transcript = (response.text or "").strip()
+            if not transcript:
+                candidate_text = []
+                for candidate in (getattr(response, "candidates", None) or []):
+                    content = getattr(candidate, "content", None)
+                    for part in (getattr(content, "parts", None) or []):
+                        part_text = getattr(part, "text", None)
+                        if part_text:
+                            candidate_text.append(part_text)
+                transcript = " ".join(candidate_text).strip()
 
+            if transcript:
+                logging.info(
+                    "Voice transcription succeeded: model=%s mime=%s bytes=%s",
+                    model_name, mime_type, len(audio_bytes)
+                )
+                return transcript
+
+            usage = getattr(response, "usage_metadata", None)
+            prompt_tokens = getattr(usage, "prompt_token_count", None)
+            output_tokens = getattr(usage, "candidates_token_count", None)
+            finish = None
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                finish = getattr(candidates[0], "finish_reason", None)
+            failures.append(
+                f"{model_name}: empty text (finish={finish}, "
+                f"prompt_tokens={prompt_tokens}, output_tokens={output_tokens})"
+            )
+            logging.warning("Voice transcription returned empty output: %s", failures[-1])
+
+        except Exception as exc:
+            failures.append(f"{model_name}: {type(exc).__name__}: {str(exc)[:300]}")
+            logging.exception("Voice transcription model %s failed", model_name)
+
+    raise RuntimeError(
+        "Both audio transcription models failed. "
+        + " | ".join(failures)
+        + ". Your recording is reaching the app; please type the question for now."
+    )
 
 def render_speaker_button(text, message_index):
     """Render an optional browser-powered text-to-speech button for one reply."""
