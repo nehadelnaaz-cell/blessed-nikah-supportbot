@@ -1,10 +1,16 @@
 import base64
 import logging
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
 from google import genai
 from google.genai import types
+
+live_voice_component = components.declare_component(
+    "bn_live_voice", path=str(Path(__file__).parent / "live_voice")
+)
 
 st.set_page_config(
     page_title="SupportBot AI | Blessed Nikah",
@@ -18,6 +24,37 @@ st.set_page_config(
 def get_gemini_client():
     """Reuse one Gemini client across Streamlit reruns."""
     return genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+
+
+
+@st.cache_resource
+def get_live_gemini_client():
+    """Create a Live API client using the ephemeral-token API version."""
+    return genai.Client(
+        api_key=st.secrets["GEMINI_API_KEY"],
+        http_options={"api_version": "v1alpha"},
+    )
+
+
+def create_live_voice_token():
+    """Mint a short-lived, single-use token; never expose the permanent API key."""
+    now = datetime.now(timezone.utc)
+    token = get_live_gemini_client().auth_tokens.create(
+        config={
+            "uses": 1,
+            "expire_time": now + timedelta(minutes=10),
+            "new_session_expire_time": now + timedelta(minutes=1),
+            "live_connect_constraints": {
+                "model": "models/gemini-3.1-flash-live-preview",
+                "config": {
+                    "response_modalities": ["AUDIO"],
+                    "input_audio_transcription": {},
+                    "output_audio_transcription": {},
+                },
+            },
+        }
+    )
+    return token.name
 
 
 st.markdown("""
@@ -717,53 +754,113 @@ for message_index, message in enumerate(st.session_state.messages):
         if message["role"] == "assistant":
             render_speaker_button(message["content"], message_index)
 
-st.markdown("**Voice assistant**")
-voice_mode = st.radio(
-    "Voice workflow",
-    ["Quick: auto-send and stream reply", "Review transcript first"],
-    horizontal=True,
-    key="voice_workflow_mode",
-    label_visibility="collapsed",
-)
+st.markdown("#### Live voice assistant")
 st.caption(
-    "Quick mode sends audio directly to Gemini in one request and streams the answer. "
-    "Review mode transcribes first so you can edit the words."
+    "Real-time, interruptible voice conversation. Your browser streams microphone audio "
+    "to Gemini Live; the permanent API key stays on the server."
 )
-voice_recording = st.audio_input("Record your question", key="customer_voice_recording")
 
-if voice_recording is not None:
-    voice_button_label = "Ask with voice (fast)" if voice_mode.startswith("Quick:") else "Transcribe and review"
-    if st.button(voice_button_label, type="primary", key="transcribe_voice_question"):
-        try:
-            audio_bytes = voice_recording.getvalue()
-            audio_type = voice_recording.type or "audio/wav"
-            if voice_mode.startswith("Quick:"):
-                st.session_state["pending_voice_audio"] = audio_bytes
-                st.session_state["pending_voice_mime"] = audio_type
-                st.session_state.pop("voice_draft", None)
-                st.session_state.pop("voice_draft_editor", None)
+if st.button("Prepare live voice session", type="primary", key="prepare_live_voice"):
+    try:
+        live_instruction = f"""
+{SYSTEM_INSTRUCTIONS}
+
+BLESSED NIKAH APPROVED KNOWLEDGE:
+{COMPANY_KNOWLEDGE}
+
+VOICE CONVERSATION RULES:
+- Speak naturally and briefly, normally 1-3 short sentences.
+- Reply in the same language as the customer: English, Hindi, or Hinglish.
+- Do not repeat greetings on every turn.
+- Give practical self-help steps before suggesting official support.
+- Never request passwords, OTPs, payment-card details, or private member information.
+- Never claim to access accounts, verify payments, or perform staff actions.
+"""
+        with st.spinner("Preparing a secure live voice session..."):
+            st.session_state["live_voice_token"] = create_live_voice_token()
+            st.session_state["live_voice_instruction"] = live_instruction
+            st.session_state.pop("live_voice_last_turn", None)
+    except Exception as e:
+        logging.exception("Could not create a Gemini Live ephemeral token.")
+        st.error(
+            "Live voice could not be prepared. Check that the Gemini API key has Live API access. "
+            f"Details: {e}"
+        )
+
+if st.session_state.get("live_voice_token"):
+    live_result = live_voice_component(
+        token=st.session_state["live_voice_token"],
+        model="models/gemini-3.1-flash-live-preview",
+        system_instruction=st.session_state.get("live_voice_instruction", ""),
+        key="bn_live_voice",
+        default=None,
+    )
+    if isinstance(live_result, dict):
+        turn_id = live_result.get("turn_id")
+        if turn_id and turn_id != st.session_state.get("live_voice_last_turn"):
+            customer_text = (live_result.get("input_text") or "").strip()
+            assistant_text = (live_result.get("output_text") or "").strip()
+            if customer_text:
+                st.session_state.messages.append({"role": "user", "content": customer_text})
+            if assistant_text:
+                st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+            st.session_state["live_voice_last_turn"] = turn_id
+            if customer_text or assistant_text:
                 st.rerun()
-            else:
-                with st.spinner("Transcribing your question..."):
-                    transcript = transcribe_audio(audio_bytes, audio_type)
-                if transcript:
-                    st.session_state["voice_draft"] = transcript
-                    st.session_state.pop("voice_draft_editor", None)
-                else:
-                    st.warning("I couldn't hear a clear question. Please record again or type your question.")
-        except Exception as e:
-            logging.exception("Voice processing failed.")
-            st.error(f"Voice processing failed: {e}. You can still type your question or record again.")
 
-if "voice_draft" in st.session_state:
-    st.text_area("Review or edit your question", key="voice_draft_editor", value=st.session_state["voice_draft"], height=90)
-    if st.button("Send voice question", type="primary", key="send_voice_question"):
-        final_voice_prompt = st.session_state.get("voice_draft_editor", st.session_state["voice_draft"]).strip()
-        if final_voice_prompt:
-            st.session_state["pending_prompt"] = final_voice_prompt
-        st.session_state.pop("voice_draft", None)
-        st.session_state.pop("voice_draft_editor", None)
+    if st.button("End / reset live voice session", key="end_live_voice"):
+        st.session_state.pop("live_voice_token", None)
+        st.session_state.pop("live_voice_instruction", None)
+        st.session_state.pop("live_voice_last_turn", None)
         st.rerun()
+
+with st.expander("Fallback: send a recorded voice question"):
+    st.markdown("**Recorded voice mode**")
+    voice_mode = st.radio(
+        "Voice workflow",
+        ["Quick: auto-send and stream reply", "Review transcript first"],
+        horizontal=True,
+        key="voice_workflow_mode",
+        label_visibility="collapsed",
+    )
+    st.caption(
+        "Use this if live microphone access is unavailable. Recorded voice may take longer."
+    )
+    voice_recording = st.audio_input("Record your question", key="customer_voice_recording")
+
+    if voice_recording is not None:
+        voice_button_label = "Ask with voice (fast)" if voice_mode.startswith("Quick:") else "Transcribe and review"
+        if st.button(voice_button_label, type="primary", key="transcribe_voice_question"):
+            try:
+                audio_bytes = voice_recording.getvalue()
+                audio_type = voice_recording.type or "audio/wav"
+                if voice_mode.startswith("Quick:"):
+                    st.session_state["pending_voice_audio"] = audio_bytes
+                    st.session_state["pending_voice_mime"] = audio_type
+                    st.session_state.pop("voice_draft", None)
+                    st.session_state.pop("voice_draft_editor", None)
+                    st.rerun()
+                else:
+                    with st.spinner("Transcribing your question..."):
+                        transcript = transcribe_audio(audio_bytes, audio_type)
+                    if transcript:
+                        st.session_state["voice_draft"] = transcript
+                        st.session_state.pop("voice_draft_editor", None)
+                    else:
+                        st.warning("I couldn't hear a clear question. Please record again or type your question.")
+            except Exception as e:
+                logging.exception("Voice processing failed.")
+                st.error(f"Voice processing failed: {e}. You can still type your question or record again.")
+
+    if "voice_draft" in st.session_state:
+        st.text_area("Review or edit your question", key="voice_draft_editor", value=st.session_state["voice_draft"], height=90)
+        if st.button("Send voice question", type="primary", key="send_voice_question"):
+            final_voice_prompt = st.session_state.get("voice_draft_editor", st.session_state["voice_draft"]).strip()
+            if final_voice_prompt:
+                st.session_state["pending_prompt"] = final_voice_prompt
+            st.session_state.pop("voice_draft", None)
+            st.session_state.pop("voice_draft_editor", None)
+            st.rerun()
 
 typed_prompt = st.chat_input("Or type your question here...")
 queued_prompt = st.session_state.pop("pending_prompt", None)
