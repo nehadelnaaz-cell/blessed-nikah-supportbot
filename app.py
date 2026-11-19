@@ -25,7 +25,23 @@ st.markdown("""
 .bn-hero h1 { color: #fff; margin: .35rem 0 .25rem 0; font-size: 2rem; }
 .bn-hero p { color: #edf4f0; margin: 0; font-size: .98rem; }
 .bn-pill { display:inline-block; margin-top:.9rem; padding:.28rem .7rem; border:1px solid rgba(255,255,255,.3); border-radius:99px; color:#f2dfb5; font-size:.78rem; }
-div[data-testid="stChatMessage"] { border: 1px solid #e9e5da; border-radius: 15px; padding: .55rem .75rem; background: #fff; }
+div[data-testid="stChatMessage"] {
+  border: 1px solid #e9e5da;
+  border-radius: 15px;
+  padding: .55rem .75rem;
+  background: #ffffff !important;
+  color: #111111 !important;
+}
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"],
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p,
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] li,
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] strong,
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] em {
+  color: #111111 !important;
+}
+div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] a {
+  color: #123f35 !important;
+}
 div[data-testid="stChatInput"] { border-color: #d8d1c1; }
 .stButton > button { border-radius: 11px; border: 1px solid #d9d2c3; color: #17483d; background: #fff; min-height: 2.7rem; }
 .stButton > button:hover { border-color: #b9944e; color: #123f35; }
