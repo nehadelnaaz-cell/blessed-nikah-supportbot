@@ -804,8 +804,14 @@ if st.session_state.get("live_voice_token"):
         default=None,
     )
     if isinstance(live_result, dict):
-        if live_result.get("event") == "renew_token":
+        renew_id = live_result.get("request_id")
+        if (
+            live_result.get("event") == "renew_token"
+            and renew_id
+            and renew_id != st.session_state.get("live_voice_renew_request_id")
+        ):
             try:
+                st.session_state["live_voice_renew_request_id"] = renew_id
                 st.session_state["live_voice_token"] = create_live_voice_token(
                     st.session_state.get("live_voice_instruction", "")
                 )
