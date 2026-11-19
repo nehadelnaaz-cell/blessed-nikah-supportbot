@@ -764,11 +764,10 @@ for message_index, message in enumerate(st.session_state.messages):
 
 st.markdown("#### Live voice assistant")
 st.caption(
-    "Real-time, interruptible voice conversation. Your browser streams microphone audio "
-    "to Gemini Live; the permanent API key stays on the server."
+    "One click starts your secure live voice conversation. Allow microphone access when prompted."
 )
 
-if st.button("Prepare live voice session", type="primary", key="prepare_live_voice"):
+if st.button("Start Voice Chat", type="primary", key="prepare_live_voice"):
     try:
         live_instruction = f"""
 {SYSTEM_INSTRUCTIONS}
@@ -801,6 +800,7 @@ if st.session_state.get("live_voice_token"):
         model="models/gemini-3.1-flash-live-preview",
         system_instruction=st.session_state.get("live_voice_instruction", ""),
         key="bn_live_voice",
+        auto_start=True,
         default=None,
     )
     if isinstance(live_result, dict):
