@@ -543,6 +543,72 @@ for message_index, message in enumerate(st.session_state.messages):
         if message["role"] == "assistant":
             render_speaker_button(message["content"], message_index)
 
+def get_smart_faq_suggestions(messages):
+    """Suggest approved FAQ prompts based on the customer's latest support topic."""
+    latest_customer_message = next(
+        (str(item["content"]).lower() for item in reversed(messages) if item["role"] == "user"),
+        "",
+    )
+    if not latest_customer_message:
+        return []
+
+    if any(word in latest_customer_message for word in ["otp", "login", "log in", "sign in", "verification"]):
+        return [
+            "What should I do if my OTP does not arrive?",
+            "What if my OTP is invalid?",
+            "How can I contact support about my account?",
+        ]
+    if any(word in latest_customer_message for word in ["payment", "paid", "deduct", "membership", "subscription", "plan"]):
+        return [
+            "What features are included in free membership?",
+            "What are the listed membership prices?",
+            "What should I do if payment succeeded but membership is missing?",
+        ]
+    if any(word in latest_customer_message for word in ["message", "chat", "messaging"]):
+        return [
+            "Can free members initiate new messages?",
+            "Can free members reply to messages?",
+            "Which membership features include messaging?",
+        ]
+    if any(word in latest_customer_message for word in ["photo", "picture", "image", "blur"]):
+        return [
+            "How does photo exchange work?",
+            "Are profile photos blurred by default?",
+            "Who controls photo sharing?",
+        ]
+    if any(word in latest_customer_message for word in ["refund", "money back", "cancel"]):
+        return [
+            "What is the published refund policy?",
+            "What if I was charged twice?",
+            "How do I contact Blessed Nikah support?",
+        ]
+    if any(word in latest_customer_message for word in ["profile", "match", "rishta", "wali", "guardian"]):
+        return [
+            "How can I improve my matrimonial profile?",
+            "What is known about Wali or guardian integration?",
+            "How can I contact Blessed Nikah support?",
+        ]
+    return [
+        "What features are free?",
+        "What are the membership plans?",
+        "How can I contact Blessed Nikah?",
+    ]
+
+
+smart_suggestions = get_smart_faq_suggestions(st.session_state.messages)
+if smart_suggestions:
+    st.markdown("#### You might also ask")
+    suggestion_cols = st.columns(3)
+    for suggestion_index, suggestion in enumerate(smart_suggestions):
+        with suggestion_cols[suggestion_index]:
+            st.button(
+                suggestion,
+                key=f"smart_faq_{suggestion_index}",
+                use_container_width=True,
+                on_click=queue_question,
+                args=(suggestion,),
+            )
+
 st.markdown("#### Live voice assistant")
 st.caption(
     "One click starts your secure live voice conversation. Allow microphone access when prompted."
