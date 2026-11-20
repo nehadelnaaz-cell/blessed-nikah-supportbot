@@ -756,7 +756,7 @@ with st.expander("Need help from a human?"):
 
 with st.sidebar:
     st.subheader("Conversation")
-    transcript = "\\n\\n".join(
+    transcript = "\n\n".join(
         f"{'Customer' if item['role'] == 'user' else 'SupportBot AI'}: {item['content']}"
         for item in st.session_state.messages
     )
