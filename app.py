@@ -2,6 +2,7 @@ import base64
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -699,6 +700,49 @@ if prompt:
             st.error(answer)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
+
+
+with st.expander("Need help from a human?"):
+    st.write(
+        "If your issue needs an account check, payment review, refund decision, "
+        "or staff assistance, prepare a message for the official Blessed Nikah team."
+    )
+    st.caption(
+        "Do not include passwords, OTPs, UPI PINs, card/bank details, private photos, "
+        "or another member's personal information."
+    )
+    support_summary = st.text_area(
+        "Briefly describe the issue",
+        placeholder="Example: My payment shows successful, but my membership is not active.",
+        max_chars=1500,
+        key="human_support_summary",
+        height=100,
+    )
+    if st.button("Prepare support message", key="prepare_human_support"):
+        if not support_summary.strip():
+            st.warning("Please briefly describe the issue first.")
+        else:
+            st.session_state["human_support_message"] = (
+                "Assalamu Alaikum Blessed Nikah Support Team,\\n\\n"
+                "I need help with the following issue:\\n"
+                + support_summary.strip()
+                + "\\n\\nPlease guide me on the next steps. JazakAllah Khair."
+            )
+
+    prepared_message = st.session_state.get("human_support_message")
+    if prepared_message:
+        encoded_message = quote(prepared_message)
+        encoded_subject = quote("Support request - Blessed Nikah")
+        st.success("Your message is ready. Review it before sending.")
+        st.code(prepared_message, language=None)
+        st.markdown(
+            f"[Open WhatsApp to send this message](https://wa.me/918851862970?text={encoded_message})"
+        )
+        st.markdown(
+            f"[Open email to send this message](mailto:support@blessednikah.com?subject={encoded_subject}&body={encoded_message})"
+        )
+        st.caption("Nothing is sent automatically. You choose whether to send it.")
+
 
 with st.sidebar:
     st.subheader("About")
